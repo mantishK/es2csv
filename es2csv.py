@@ -111,9 +111,14 @@ class Es2csv:
                 self.opts.query, ' AND '.join(self.opts.tags))
             search_args['q'] = query
 
-        if '_all' not in self.opts.fields:
+        if '_all' not in self.opts.fields and not self.opts.mapping:
             search_args['_source_include'] = ','.join(self.opts.fields)
             self.csv_headers.extend([unicode(field, "utf-8") for field in self.opts.fields if '*' not in field])
+
+        if self.opts.mapping:
+            search_args['_source_include'] = ','.join(self.opts.fields)
+            mapping = json.loads(self.opts.mapping.replace("\\", ""))
+            self.csv_headers = list(mapping.values())
 
         if self.opts.debug_mode:
             print('Using these indices: {}.'.format(', '.join(self.opts.index_prefixes)))
@@ -189,7 +194,7 @@ class Es2csv:
                     [to_keyvalue_pairs(item, ancestors + [str(index)]) for index, item in enumerate(source)]
             else:
                 header = header_delimeter.join(ancestors)
-                if header not in self.csv_headers:
+                if header not in self.csv_headers and not self.opts.mapping:
                     self.csv_headers.append(header)
                 try:
                     out[header] = '{}{}{}'.format(out[header], self.opts.delimiter, source)
@@ -225,12 +230,26 @@ class Es2csv:
                 for line in codecs.open(self.tmp_file, mode='r', encoding='utf-8'):
                     timer += 1
                     bar.update(timer)
+                    if self.opts.mapping:
+                        line = self.add_mapping_to_json(self.opts.mapping, line)
                     csv_writer.writerow(json.loads(line))
                 output_file.close()
                 bar.finish()
             else:
                 print('There is no docs with selected field(s): {}.'.format(','.join(self.opts.fields)))
             os.remove(self.tmp_file)
+
+    def add_mapping_to_json(self, mapping, key_val_json):
+        mapping_dict = json.loads(mapping.replace("\\", ""))
+        key_val = json.loads(key_val_json)
+        new_key_val = {}
+        #for key in key_val:
+        #    if mapping_dict.get(key):
+        #        new_key_val[mapping_dict[key]] = key_val[key]
+        for key in mapping_dict:
+            if key_val.get(key):
+                new_key_val[mapping_dict[key]] = key_val[key]
+        return json.dumps(new_key_val)
 
     def clean_scroll_ids(self):
         try:
